@@ -1,3 +1,45 @@
+"""
+This module provides tools and data structures for supporting a feedback loop in the GPT Engineer application.
+
+The primary intent of this module is to gather feedback from the user on the output of the gpt-engineer tool,
+with their consent, and to store this feedback for further analysis and improvement of the tool.
+
+Classes:
+----------
+Review:
+    Represents user's review of the generated code.
+Learning:
+    Represents the metadata and feedback collected for a session in which gpt-engineer was used.
+
+Functions:
+----------
+human_review_input() -> Review:
+    Interactively gathers feedback from the user regarding the performance of generated code.
+
+check_consent() -> bool:
+    Checks if the user has previously given consent to store their data and if not, asks for it.
+
+collect_consent() -> bool:
+    Verifies if the user has given consent to store their data or prompts for it.
+
+ask_if_can_store() -> bool:
+    Asks the user if it's permissible to store their data for gpt-engineer improvement.
+
+logs_to_string(steps: List[Step], logs: DB) -> str:
+    Converts logs of steps into a readable string format.
+
+extract_learning(model: str, temperature: float, steps: List[Step], dbs: DBs, steps_file_hash) -> Learning:
+    Extracts feedback and session details to create a Learning instance.
+
+get_session() -> str:
+    Retrieves a unique identifier for the current user session.
+
+Constants:
+----------
+TERM_CHOICES:
+    Terminal color choices for user interactive prompts.
+"""
+
 import json
 import random
 import tempfile
@@ -10,8 +52,8 @@ from typing import List, Optional
 from dataclasses_json import dataclass_json
 from termcolor import colored
 
-from gpt_engineer.db import DB, DBs
-from gpt_engineer.domain import Step
+from gpt_engineer.core.db import DB, DBs
+from gpt_engineer.core.domain import Step
 
 
 @dataclass_json
@@ -61,6 +103,9 @@ def human_review_input() -> Review:
         The user's review of the generated code.
     """
     print()
+    if not check_consent():
+        return None
+    print()
     print(
         colored("To help gpt-engineer learn, please answer 3 questions:", "light_green")
     )
@@ -92,8 +137,6 @@ def human_review_input() -> Review:
             + colored("(ok to leave blank)\n", "light_green")
         )
 
-    check_consent()
-
     return Review(
         raw=", ".join([ran, perfect, useful]),
         ran={"y": True, "n": False, "u": None, "": None}[ran],
@@ -103,14 +146,14 @@ def human_review_input() -> Review:
     )
 
 
-def check_consent():
+def check_consent() -> bool:
     """
     Check if the user has given consent to store their data.
     If not, ask for their consent.
     """
     path = Path(".gpte_consent")
     if path.exists() and path.read_text() == "true":
-        return
+        return True
     answer = input("Is it ok if we store your prompts to learn? (y/n)")
     while answer.lower() not in ("y", "n"):
         answer = input("Invalid input. Please enter y or n: ")
@@ -120,8 +163,10 @@ def check_consent():
         print(colored("Thank you️", "light_green"))
         print()
         print("(If you change your mind, delete the file .gpte_consent)")
+        return True
     else:
         print(colored("We understand ❤️", "light_green"))
+        return False
 
 
 def collect_consent() -> bool:
@@ -135,10 +180,8 @@ def collect_consent() -> bool:
         True if the user has given consent, False otherwise.
     """
     consent_flag = Path(".gpte_consent")
-    has_given_consent = consent_flag.exists() and consent_flag.read_text() == "true"
-
-    if has_given_consent:
-        return True
+    if consent_flag.exists():
+        return consent_flag.read_text() == "true"
 
     if ask_if_can_store():
         consent_flag.write_text("true")
